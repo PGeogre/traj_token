@@ -180,24 +180,8 @@ def h3_to_tokens_hierarchical(h3_str):
     """将H3索引转换为层级化令牌，保留地理层级信息（已优化）"""
     return h3_to_tokens_hierarchical_optimized(h3_str)
 
-def h3_to_tokens_simple(h3_str):
-    """简化的H3 token化方案"""
-    h3_str = str(h3_str).lower()
-    # 方案2: 直接使用完整H3作为单个token
-    return [f"H3_{h3_str}"]
 
-def h3_to_tokens_grouped(h3_str):
-    """分组的H3 token化方案"""
-    h3_str = str(h3_str).lower()
-    # 方案3: 将H3分成几个有意义的组
-    if len(h3_str) >= 15:
-        return [
-            f"H3_PREFIX_{h3_str[:5]}",    # 前缀：版本+分辨率+大区域
-            f"H3_MID_{h3_str[5:10]}",     # 中间：详细位置
-            f"H3_SUFFIX_{h3_str[10:]}"    # 后缀：精确位置
-        ]
-    else:
-        return [f"H3_{h3_str}"]
+
 
 def vessel_class_to_token(vessel_class):
     """将船舶类别转换为令牌"""
@@ -229,8 +213,6 @@ H3_TOKENIZATION_OPTIONS = {
     'grid_based': h3_to_tokens_grid_based,                       # 基于网格概念
     'relative': h3_to_tokens_relative,                           # 相对位置编码
     'original_hierarchical': h3_to_tokens_hierarchical,          # 原层级方案（已优化）
-    'simple': h3_to_tokens_simple,                               # 简单方案
-    'grouped': h3_to_tokens_grouped                              # 分组方案
 }
 
 def get_h3_tokenizer(method='hierarchical_optimized'):

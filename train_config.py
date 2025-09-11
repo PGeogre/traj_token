@@ -4,7 +4,8 @@ class TrainingConfig:
     model_name = "/home/maomao/pretrained_model/qwen2.5-0.5b"  # 使用本地下载的模型
     
     # 数据配置
-    train_data_file = "../datasets/train_dataset_nj.jsonl"
+    # train_data_file = "../datasets/train_dataset_nj.jsonl"
+    train_data_file = "./train_dataset_demo.jsonl"
     max_length = 1024  # 最大序列长度
     
     # 训练参数 (针对分布式训练调整)

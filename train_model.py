@@ -18,6 +18,8 @@ import argparse
 
 from train_config import TrainingConfig
 from data_loader import create_data_loaders
+from pretrain_config import FineTuneConfig
+from pretrain_models import TrajectoryFineTuneModel, TrajectoryModelUtils
 
 def setup_distributed():
     """设置分布式训练环境"""
@@ -53,32 +55,51 @@ def is_main_process(rank):
     return rank == 0
 
 class TrajectoryClassifier(nn.Module):
-    def __init__(self, model_name, num_labels, tokenizer=None):
+    def __init__(self, model_name, num_labels, tokenizer=None, use_pretrained=False):
         super().__init__()
-        self.backbone = AutoModel.from_pretrained(model_name)
         
-        # 如果tokenizer有新tokens，需要调整embedding层大小
-        if tokenizer is not None:
-            self.backbone.resize_token_embeddings(len(tokenizer))
-            print(f"调整模型embedding层大小为: {len(tokenizer)}")
-        
-        self.dropout = nn.Dropout(0.3)
-        self.classifier = nn.Linear(self.backbone.config.hidden_size, num_labels)
+        if use_pretrained:
+            # 使用预训练的TrajectoryFineTuneModel
+            print(f"加载预训练微调模型: {model_name}")
+            self.model = TrajectoryFineTuneModel(model_name, num_labels, tokenizer)
+        else:
+            # 原来的实现
+            self.backbone = AutoModel.from_pretrained(model_name)
+            
+            # 如果tokenizer有新tokens，需要调整embedding层大小
+            if tokenizer is not None:
+                self.backbone.resize_token_embeddings(len(tokenizer))
+                print(f"调整模型embedding层大小为: {len(tokenizer)}")
+            
+            self.dropout = nn.Dropout(0.3)
+            self.classifier = nn.Linear(self.backbone.config.hidden_size, num_labels)
+            self.model = None
         
     def forward(self, input_ids, attention_mask):
-        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        # 使用[CLS] token的输出进行分类
-        pooled_output = outputs.last_hidden_state[:, 0]  # [CLS] token
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-        return logits
+        if self.model is not None:
+            # 使用预训练微调模型
+            return self.model(input_ids, attention_mask)['logits']
+        else:
+            # 原来的实现
+            outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+            # 使用[CLS] token的输出进行分类
+            pooled_output = outputs.last_hidden_state[:, 0]  # [CLS] token
+            pooled_output = self.dropout(pooled_output)
+            logits = self.classifier(pooled_output)
+            return logits
 
-def train_model():
+def train_model(use_pretrained=False, pretrained_model_path=None):
     # 设置分布式训练
     is_distributed, rank, world_size, gpu_id = setup_distributed()
     
-    # 加载配置
-    config = TrainingConfig()
+    # 加载配置 - 根据是否使用预训练选择不同配置
+    if use_pretrained and pretrained_model_path:
+        config = FineTuneConfig()
+        config.pretrained_model_path = pretrained_model_path
+        print("使用微调配置")
+    else:
+        config = TrainingConfig()
+        print("使用标准训练配置")
     
     # 设置设备
     if is_distributed:
@@ -105,8 +126,21 @@ def train_model():
     # 创建模型
     if is_main_process(rank):
         print("加载模型...")
-    model = TrajectoryClassifier(config.model_name, config.num_labels, tokenizer)
+    
+    # 根据是否使用预训练模型选择不同的模型路径
+    model_path = pretrained_model_path if use_pretrained else config.model_name
+    model = TrajectoryClassifier(
+        model_path, 
+        config.num_labels, 
+        tokenizer, 
+        use_pretrained=use_pretrained
+    )
     model.to(device)
+    
+    # 打印模型信息
+    if is_main_process(rank):
+        TrajectoryModelUtils.count_parameters(model)
+        TrajectoryModelUtils.get_model_size_mb(model)
     
     # 包装为分布式模型
     if is_distributed:
@@ -273,4 +307,18 @@ def train_model():
     return model, tokenizer
 
 if __name__ == "__main__":
-    model, tokenizer = train_model()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='训练轨迹分类模型')
+    parser.add_argument('--use_pretrained', action='store_true', 
+                       help='是否使用预训练模型进行微调')
+    parser.add_argument('--pretrained_model_path', type=str,
+                       default="../model_out/trajectory_pretrain_model/best_model",
+                       help='预训练模型路径')
+    
+    args = parser.parse_args()
+    
+    model, tokenizer = train_model(
+        use_pretrained=args.use_pretrained,
+        pretrained_model_path=args.pretrained_model_path if args.use_pretrained else None
+    )
