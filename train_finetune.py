@@ -447,6 +447,8 @@ if __name__ == "__main__":
     parser.add_argument('--pretrained_model_path', type=str,
                        default="../model_out/trajectory_pretrain_model/best_model",
                        help='预训练模型路径')
+    parser.add_argument('--local-rank', type=int, default=-1,
+                       help='分布式训练的local rank参数')
     
     args = parser.parse_args()
     

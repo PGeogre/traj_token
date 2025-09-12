@@ -53,8 +53,9 @@ function run_pretraining() {
     echo "预训练模型保存路径: $PRETRAIN_OUTPUT"
     
     # 检查是否有多GPU可用
+    # 报单卡问题
     local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null || echo "0")
-    
+    # local gpu_count=$(nvidia-smi --list-gpus | wc -l 2>/dev/null || echo "0")
     if [ "$gpu_count" -gt 1 ]; then
         echo "检测到 $gpu_count 个GPU，使用分布式训练"
         
@@ -73,13 +74,13 @@ function run_pretraining() {
     fi
     
     # 检查预训练是否成功
-    if [ -d "$PRETRAIN_OUTPUT/best_model" ]; then
+    if [ -d "$PRETRAIN_OUTPUT/final_model" ]; then
         echo "✅ 预训练成功完成"
-        echo "预训练模型保存在: $PRETRAIN_OUTPUT/best_model"
+        echo "预训练模型保存在: $PRETRAIN_OUTPUT/final_model"
         
         # 显示模型文件
         echo "模型文件列表:"
-        ls -la "$PRETRAIN_OUTPUT/best_model/"
+        ls -la "$PRETRAIN_OUTPUT/final_model/"
     else
         echo "❌ 预训练失败，未找到模型输出"
         exit 1
@@ -108,7 +109,7 @@ function run_finetuning() {
     
     # 检查是否有多GPU可用
     local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null || echo "0")
-    
+    # local gpu_count=$(nvidia-smi --list-gpus | wc -l 2>/dev/null || echo "0")
     if [ "$gpu_count" -gt 1 ]; then
         echo "检测到 $gpu_count 个GPU，使用分布式微调"
         
@@ -129,21 +130,21 @@ function run_finetuning() {
     fi
     
     # 检查微调是否成功
-    if [ -d "$FINETUNE_OUTPUT/best_model" ]; then
+    if [ -d "$FINETUNE_OUTPUT/final_model" ]; then
         echo "✅ 微调成功完成"
-        echo "最终模型保存在: $FINETUNE_OUTPUT/best_model"
+        echo "最终模型保存在: $FINETUNE_OUTPUT/final_model"
         
         # 显示模型文件
         echo "模型文件列表:"
-        ls -la "$FINETUNE_OUTPUT/best_model/"
+        ls -la "$FINETUNE_OUTPUT/final_model/"
         
         # 如果有验证报告，显示关键指标
-        if [ -f "$FINETUNE_OUTPUT/best_model/validation_report.json" ]; then
+        if [ -f "$FINETUNE_OUTPUT/final_model/validation_report.json" ]; then
             echo ""
             echo "验证结果摘要:"
             python -c "
 import json
-with open('$FINETUNE_OUTPUT/best_model/validation_report.json') as f:
+with open('$FINETUNE_OUTPUT/final_model/validation_report.json') as f:
     report = json.load(f)
     print(f\"整体准确率: {report.get('accuracy', 'N/A'):.4f}\")
     print(f\"宏平均F1: {report.get('macro avg', {}).get('f1-score', 'N/A'):.4f}\")
@@ -176,7 +177,7 @@ case "$1" in
         run_pretraining
         echo ""
         echo "🎉 预训练完成！"
-        echo "接下来可以运行微调: $0 finetune $PRETRAIN_OUTPUT/best_model"
+        echo "接下来可以运行微调: $0 finetune $PRETRAIN_OUTPUT/final_model"
         ;;
     
     "finetune")
@@ -198,11 +199,11 @@ case "$1" in
         run_pretraining
         
         # 2. 微调
-        run_finetuning "$PRETRAIN_OUTPUT/best_model"
+        run_finetuning "$PRETRAIN_OUTPUT/final_model"
         
         echo ""
         echo "🎉🎉🎉 完整训练流程完成！"
-        echo "预训练模型: $PRETRAIN_OUTPUT/best_model"
+        echo "预训练模型: $PRETRAIN_OUTPUT/final_model"
         echo "最终微调模型: $FINETUNE_OUTPUT/best_model"
         ;;
     

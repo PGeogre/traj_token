@@ -25,7 +25,7 @@ class PretrainConfig:
     # 训练参数
     batch_size = 4  # 预训练可以用较大的batch size
     learning_rate = 5e-5  # 预训练用较大的学习率
-    num_epochs = 50  # 预训练轮数
+    num_epochs = 5  # 预训练轮数
     warmup_steps = 1000  # 预热步数
     weight_decay = 0.01  # 权重衰减
     
@@ -60,17 +60,17 @@ class FineTuneConfig:
     """微调阶段的配置参数"""
     
     # 模型配置
-    pretrained_model_path = "../model_out/trajectory_pretrain_model"  # 预训练模型路径
+    pretrained_model_path = "../model_out/trajectory_pretrain_model/final_model"  # 预训练模型路径
     num_labels = 14  # 分类类别数
     
     # 数据配置  
-    train_data_file = "../datasets/train_dataset_demo.jsonl"
-    max_length = 1024
+    train_data_file = "./train_dataset_demo.jsonl"
+    max_length = 512
     
     # 训练参数（微调用较小的学习率和较少的轮数）
     batch_size = 4  # 微调用较小的batch size
     learning_rate = 2e-5  # 微调用较小的学习率
-    num_epochs = 20  # 微调轮数较少
+    num_epochs = 5  # 微调轮数较少
     warmup_steps = 500
     weight_decay = 0.01
     
