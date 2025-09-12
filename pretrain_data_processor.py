@@ -15,7 +15,7 @@ class PretrainDataProcessor:
         self.mask_token_id = tokenizer.mask_token_id
         
         # 定义不同类型的tokens
-        self.h3_prefixes = ['H3_L', 'H3_GRID', 'H3_BASE', 'H3_SUB', 'H3_PRECISE', 'GRID_']
+        self.h3_prefixes = ['H3_L', 'H3_GRID', 'H3_BASE', 'H3_SUB', 'H3_PRECISE', 'GRID_', 'H3_CHAR']
         self.vessel_class_tokens = [
             'Bulk_Carrier', 'Cargo_Ship', 'Container_Ship', 'Barge',
             'Fishing_Vessel', 'Other', 'Oil_Tanker', 'Passenger_Ship',
@@ -75,10 +75,9 @@ class PretrainDataProcessor:
                     # 用[MASK]替换
                     masked_tokens[i] = self.mask_token
                 elif rand < 0.9:
-                    # 用随机token替换（从词汇表中随机选择）
-                    vocab_size = len(self.tokenizer)
-                    random_token_id = random.randint(0, vocab_size - 1)
-                    masked_tokens[i] = self.tokenizer.convert_ids_to_tokens(random_token_id)
+                    # 用随机token替换（从词汇表中随机选择安全的token）
+                    safe_tokens = ['SPD_STOP', 'COG_N', 'YEAR_2021', 'MONTH_1', 'DAY_1']
+                    masked_tokens[i] = random.choice(safe_tokens)
                 # 10%概率保持原token不变
                 
                 # 设置标签为原始token的ID（用于计算loss）
@@ -135,11 +134,14 @@ class PretrainDataProcessor:
                         'total_tokens_count': len(tokens)
                     }
                     
-                    outfile.write(json.dumps(pretrain_sample) + '\n')
+                    # 确保JSON序列化不会出错
+                    json_str = json.dumps(pretrain_sample, ensure_ascii=True)
+                    outfile.write(json_str + '\n')
                     total_samples += 1
                     
                 except Exception as e:
                     print(f"处理第 {line_num} 行时出错: {e}")
+                    continue
         
         print(f"预训练数据创建完成！")
         print(f"总样本数: {total_samples}")
@@ -201,6 +203,53 @@ class PretrainDataset(Dataset):
             'labels': labels_tensor,
             'original_label': torch.tensor(item.get('original_label', -1), dtype=torch.long)
         }
+
+def get_custom_tokens(train_data_file):
+    """获取自定义tokens列表，用于重复加载时使用"""
+    custom_tokens = []
+    
+    # 时间相关tokens
+    for year in range(2020, 2025):
+        custom_tokens.append(f"YEAR_{year}")
+    for month in range(1, 13):
+        custom_tokens.append(f"MONTH_{month}")
+    for day in range(1, 32):
+        custom_tokens.append(f"DAY_{day}")
+    for hour in range(0, 24):
+        custom_tokens.append(f"HOUR_{hour}")
+    for minute in range(0, 60):
+        custom_tokens.append(f"MINUTE_{minute}")
+    for second in range(0, 60):
+        custom_tokens.append(f"SECOND_{second}")
+    
+    # 速度、航向、船舶类别tokens
+    custom_tokens.extend(["SPD_STOP", "SPD_SLOW", "SPD_MID", "SPD_FAST", "SPD_HIGH"])
+    custom_tokens.extend(["COG_N", "COG_NE", "COG_E", "COG_SE", "COG_S", "COG_SW", "COG_W", "COG_NW", "COG_UNKNOWN"])
+    custom_tokens.extend([
+        'Bulk_Carrier','Cargo_Ship','Container_Ship','Barge',
+        'Fishing_Vessel','Other','Oil_Tanker','Passenger_Ship',
+        'Sand_Carrier','Fishery_Research_Vessel','Supply_Ship',
+        'Storage_Tanker', 'Submarine', 'Transport_Ship'
+    ])
+    custom_tokens.extend(["POINT_END"])
+    
+    # 收集H3 tokens
+    print("收集H3 tokens...")
+    h3_tokens = set()
+    with open(train_data_file, 'r', encoding='utf-8') as f:
+        for line_num, line in enumerate(f):
+            if line_num % 1000 == 0:
+                print(f"处理第 {line_num} 行...")
+            item = json.loads(line.strip())
+            tokens = item['text'].split()
+            for token in tokens:
+                if token.startswith(('H3_', 'h3_', 'GRID_')):
+                    h3_tokens.add(token)
+    
+    custom_tokens.extend(sorted(h3_tokens))
+    print(f"收集到 {len(h3_tokens)} 个H3 tokens")
+    
+    return custom_tokens
 
 def create_pretrain_dataset(config):
     """创建预训练数据集的主函数"""

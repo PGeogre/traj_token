@@ -54,23 +54,7 @@ def is_main_process(rank):
 def create_pretrain_data_loaders(config, tokenizer, is_distributed=False, rank=0, world_size=1):
     """创建预训练数据加载器"""
     
-    # 检查是否需要生成预训练数据
-    if not os.path.exists(config.pretrain_data_file):
-        if is_main_process(rank):
-            print("预训练数据文件不存在，正在生成...")
-            from pretrain_data_processor import PretrainDataProcessor
-            processor = PretrainDataProcessor(tokenizer)
-            processor.create_pretrain_data(
-                config.train_data_file,
-                config.pretrain_data_file,
-                mask_prob=config.mask_prob
-            )
-        
-        # 在分布式训练中，等待主进程完成数据生成
-        if is_distributed:
-            dist.barrier()
-    
-    # 创建数据集
+    # 数据文件存在性检查已在主函数中完成，这里直接加载
     if is_main_process(rank):
         print(f"加载预训练数据: {config.pretrain_data_file}")
     
@@ -225,7 +209,32 @@ def pretrain_model():
     if is_main_process(rank):
         print("准备预训练数据和tokenizer...")
     
-    pretrain_data_file, tokenizer = create_pretrain_dataset(config)
+    # 检查是否已存在预训练数据，避免重复生成
+    if os.path.exists(config.pretrain_data_file):
+        if is_main_process(rank):
+            print(f"发现已存在的预训练数据: {config.pretrain_data_file}")
+            print("跳过数据生成，直接加载现有数据...")
+        
+        # 直接创建tokenizer而不重新生成数据
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(config.model_name)
+        
+        # 添加特殊tokens
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        if tokenizer.mask_token is None:
+            tokenizer.add_special_tokens({'mask_token': '[MASK]'})
+            
+        # 加载已有的自定义tokens
+        from pretrain_data_processor import get_custom_tokens
+        custom_tokens = get_custom_tokens(config.train_data_file)
+        tokenizer.add_tokens(custom_tokens)
+        
+        pretrain_data_file = config.pretrain_data_file
+    else:
+        if is_main_process(rank):
+            print("未找到预训练数据，开始生成...")
+        pretrain_data_file, tokenizer = create_pretrain_dataset(config)
     
     # 在分布式训练中同步tokenizer
     if is_distributed:

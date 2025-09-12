@@ -70,7 +70,7 @@ class FineTuneConfig:
     # 训练参数（微调用较小的学习率和较少的轮数）
     batch_size = 4  # 微调用较小的batch size
     learning_rate = 2e-5  # 微调用较小的学习率
-    num_epochs = 5  # 微调轮数较少
+    num_epochs = 10  # 微调轮数较少
     warmup_steps = 500
     weight_decay = 0.01
     

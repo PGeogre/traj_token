@@ -54,8 +54,8 @@ function run_pretraining() {
     
     # 检查是否有多GPU可用
     # 报单卡问题
-    local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null || echo "0")
-    # local gpu_count=$(nvidia-smi --list-gpus | wc -l 2>/dev/null || echo "0")
+    # local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null || echo "0")
+    local gpu_count=$(nvidia-smi --list-gpus | wc -l 2>/dev/null || echo "0")
     if [ "$gpu_count" -gt 1 ]; then
         echo "检测到 $gpu_count 个GPU，使用分布式训练"
         
@@ -108,8 +108,8 @@ function run_finetuning() {
     echo "微调模型保存路径: $FINETUNE_OUTPUT"
     
     # 检查是否有多GPU可用
-    local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null || echo "0")
-    # local gpu_count=$(nvidia-smi --list-gpus | wc -l 2>/dev/null || echo "0")
+    # local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null || echo "0")
+    local gpu_count=$(nvidia-smi --list-gpus | wc -l 2>/dev/null || echo "0")
     if [ "$gpu_count" -gt 1 ]; then
         echo "检测到 $gpu_count 个GPU，使用分布式微调"
         
