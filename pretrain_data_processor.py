@@ -327,7 +327,6 @@ def create_pretrain_dataset(config):
 if __name__ == "__main__":
     # 测试代码
     from train_config import TrainingConfig
-    
     config = TrainingConfig()
     pretrain_file, tokenizer = create_pretrain_dataset(config)
     

@@ -4,7 +4,7 @@ import pandas as pd
 import json
 from tqdm import tqdm
 from datetime import datetime
-
+import h3
 # ====================================================================
 # 1. 轨迹点令牌化函数
 #    这些函数将每个轨迹点的数值数据转换为离散的文本令牌
@@ -46,140 +46,47 @@ def course_to_token(cog):
     elif 292.5 <= cog < 337.5: return "COG_NW"  # 西北
     else: return "COG_UNKNOWN"
 
-def h3_to_tokens_hierarchical_optimized(h3_str):
-    """优化的层级化H3令牌，去掉H3_FULL以减少词表大小"""
-    h3_str = str(h3_str).lower()
+
+def h3_to_tokens_cell_based(h3_str):
+    """
+    将H3字符串转换为基于单元格的令牌序列
+    输出格式: H3_res_几, H3_base_几, H3_cell_1_几, H3_cell_2_几, H3_cell_3_几, ...
     
-    if len(h3_str) >= 15:  # 标准H3长度
-        tokens = []
-        # 分辨率级别（固定范围0-15，词表大小固定）
-        tokens.append(f"H3_RES_{h3_str[1]}")
-        
-        # 多层级地理区域（显著减少词表大小）
-        tokens.append(f"H3_L1_{h3_str[:3]}")   # 大区域 (~16^2 = 256个)
-        tokens.append(f"H3_L2_{h3_str[:5]}")   # 中区域 (~16^4 = 65k个)
-        tokens.append(f"H3_L3_{h3_str[:7]}")   # 小区域 (~16^6 = 16M个，但可控)
-        tokens.append(f"H3_L4_{h3_str[:9]}")   # 精细区域
-        
-        # 不再使用H3_FULL，避免词表爆炸
+    参数:
+        h3_str: H3索引字符串
+    
+    返回:
+        tokens: 令牌列表，包含分辨率、基础单元格和各级子单元格
+    """
+    try:
+        # 验证H3字符串有效性
+        if not h3.is_valid_cell(h3_str):
+            return [f"H3_INVALID_{h3_str}"]
+
+        # 获取H3的分辨率和基础单元格
+        res = h3.get_resolution(h3_str)
+        base_cell = h3.get_base_cell_number(h3_str)
+        h3_int = h3.str_to_int(h3_str)
+
+        tokens = [
+            f"H3_res_{res}",        # 分辨率令牌 (0-15)
+            f"H3_base_{base_cell}" # 基础单元格令牌 (122个基础单元格)
+        ]
+
+        # 提取各级子单元格的方向信息
+        # H3使用3位编码表示7个方向 (0-6，7是无效值)
+        for level in range(res):
+            shift = 45 - 3 * level  # H3内部使用位移来编码层级信息
+            if shift < 0:  # 防止超出范围
+                break
+            direction = (h3_int >> shift) & 0b111  # 提取3位方向信息
+            tokens.append(f"H3_cell_{level + 1}_{direction}")
+
         return tokens
-    else:
-        return [f"H3_SHORT_{h3_str}"]
-
-def h3_to_tokens_char_split(h3_str):
-    """将H3字符串的每一个字符拆开作为独立token"""
-    h3_str = str(h3_str).lower()
-    tokens = []
-    
-    # 为每个字符创建一个token
-    for i, char in enumerate(h3_str):
-        tokens.append(f"H3_CHAR_{i}_{char}")
-    
-    return tokens
-
-def h3_to_tokens_semantic(h3_str):
-    """基于H3语义结构的令牌化，根据实际含义拆分"""
-    h3_str = str(h3_str).lower()
-    
-    if len(h3_str) >= 15:
-        tokens = []
         
-        # 1. 版本信息（通常是8）
-        tokens.append(f"H3_VER_{h3_str[0]}")
-        
-        # 2. 分辨率级别（0-15）
-        resolution = h3_str[1]
-        tokens.append(f"H3_RES_{resolution}")
-        
-        # 3. 基础单元编码（位置的粗粒度表示）
-        base_unit = h3_str[2:6]  # 4位用于基础单元
-        tokens.append(f"H3_BASE_{base_unit}")
-        
-        # 4. 子单元编码（位置的细粒度表示）
-        sub_unit = h3_str[6:10]  # 4位用于子单元
-        tokens.append(f"H3_SUB_{sub_unit}")
-        
-        # 5. 精确单元（最后几位）
-        precise_unit = h3_str[10:13]  # 3位用于精确定位
-        tokens.append(f"H3_PRECISE_{precise_unit}")
-        
-        return tokens
-    else:
-        return [f"H3_SHORT_{h3_str}"]
-
-def h3_to_tokens_grid_based(h3_str):
-    """基于网格概念的H3令牌化，更抽象的地理表示"""
-    h3_str = str(h3_str).lower()
-    
-    if len(h3_str) >= 15:
-        tokens = []
-        
-        # 分辨率
-        resolution = h3_str[1]  # 保持为字符串
-        tokens.append(f"GRID_RES_{resolution}")
-        
-        # 将H3转换为网格坐标概念
-        # 大网格（全球划分）
-        major_grid = h3_str[2:4]
-        tokens.append(f"GRID_MAJOR_{major_grid}")
-        
-        # 中等网格（区域划分）
-        mid_grid = h3_str[4:7]
-        tokens.append(f"GRID_MID_{mid_grid}")
-        
-        # 小网格（局部划分）
-        minor_grid = h3_str[7:10]
-        tokens.append(f"GRID_MINOR_{minor_grid}")
-        
-        # 微网格（精确位置）
-        micro_grid = h3_str[10:13]
-        tokens.append(f"GRID_MICRO_{micro_grid}")
-        
-        return tokens
-    else:
-        return [f"GRID_SHORT_{h3_str}"]
-
-def h3_to_tokens_relative(h3_str, prev_h3_str=None):
-    """基于相对位置的H3令牌化，减少绝对位置依赖"""
-    h3_str = str(h3_str).lower()
-    
-    if prev_h3_str is None:
-        # 第一个点，使用简化的绝对位置
-        return h3_to_tokens_hierarchical_optimized(h3_str)
-    
-    prev_h3_str = str(prev_h3_str).lower()
-    tokens = []
-    
-    # 比较分辨率变化
-    if len(h3_str) >= 2 and len(prev_h3_str) >= 2:
-        curr_res = h3_str[1]
-        prev_res = prev_h3_str[1] 
-        
-        if curr_res == prev_res:
-            tokens.append("H3_RES_SAME")
-        else:
-            tokens.append(f"H3_RES_CHANGE_{curr_res}")
-    
-    # 比较区域变化（逐层比较）
-    for i, (level_name, end_pos) in enumerate([("L1", 3), ("L2", 5), ("L3", 7), ("L4", 9)]):
-        if len(h3_str) >= end_pos and len(prev_h3_str) >= end_pos:
-            curr_level = h3_str[:end_pos]
-            prev_level = prev_h3_str[:end_pos]
-            
-            if curr_level == prev_level:
-                tokens.append(f"H3_{level_name}_SAME")
-            else:
-                tokens.append(f"H3_{level_name}_CHANGE")
-                # 只在变化时记录新的区域（减少词表）
-                tokens.append(f"H3_{level_name}_NEW_{curr_level[-2:]}")  # 只记录最后2位
-    
-    return tokens
-
-# 保留原函数以保持兼容性
-def h3_to_tokens_hierarchical(h3_str):
-    """将H3索引转换为层级化令牌，保留地理层级信息（已优化）"""
-    return h3_to_tokens_hierarchical_optimized(h3_str)
-
+    except Exception as e:
+        # 处理任何H3库可能抛出的异常
+        return [f"H3_ERROR_{str(e).replace(' ', '_')}"]
 
 
 
@@ -207,66 +114,31 @@ def vessel_class_to_token(vessel_class):
 # H3 tokenization配置
 # ====================================================================
 H3_TOKENIZATION_OPTIONS = {
-    'char_split': h3_to_tokens_char_split,                           # 最简单：每个字符单独token
-    'hierarchical_optimized': h3_to_tokens_hierarchical_optimized,  # 推荐：去掉H3_FULL的层级方案
-    'semantic': h3_to_tokens_semantic,                            # 基于H3语义结构
-    'grid_based': h3_to_tokens_grid_based,                       # 基于网格概念
-    'relative': h3_to_tokens_relative,                           # 相对位置编码
-    'original_hierarchical': h3_to_tokens_hierarchical,          # 原层级方案（已优化）
+    'cell_based': h3_to_tokens_cell_based,  # 基于单元格的方案
 }
 
-def get_h3_tokenizer(method='hierarchical_optimized'):
+def get_h3_tokenizer(method='cell_based'):
     """获取指定的H3令牌化函数"""
-    return H3_TOKENIZATION_OPTIONS.get(method, h3_to_tokens_hierarchical_optimized)
+    return H3_TOKENIZATION_OPTIONS.get(method, h3_to_tokens_cell_based)
 
-def estimate_vocab_size(method='hierarchical_optimized'):
-    """估算不同方案的词表大小"""
-    estimates = {
-        'char_split': {
-            'H3_CHAR_0_*': 1,           # 第0位通常是8
-            'H3_CHAR_1_*': 16,          # 第1位是0-f (分辨率)
-            'H3_CHAR_2_*': 16,          # 第2位是0-f
-            'H3_CHAR_3_*': 16,          # 第3位是0-f
-            # ... 总共15个位置，每个位置16个可能值
-            'total_per_position': 16,
-            'total_positions': 15,      # H3通常15位
-            'total_estimate': '15 × 16 = 240个token'
-        },
-        'hierarchical_optimized': {
-            'H3_RES': 16,           # 分辨率0-15
-            'H3_L1': 256,           # ~16^2
-            'H3_L2': 65536,         # ~16^4  
-            'H3_L3': 16777216,      # ~16^6 (但实际会少很多)
-            'H3_L4': 'variable',    # 取决于数据分布
-            'total_estimate': '< 20M'
-        },
-        'semantic': {
-            'H3_VER': 2,            # 通常只有版本8
-            'H3_RES': 16,           # 分辨率0-15
-            'H3_BASE': 65536,       # 4位hex = 16^4
-            'H3_SUB': 65536,        # 4位hex = 16^4  
-            'H3_PRECISE': 4096,     # 3位hex = 16^3
-            'total_estimate': '< 150K'
-        },
-        'grid_based': {
-            'GRID_RES': 16,         # 分辨率0-15
-            'GRID_MAJOR': 256,      # 2位hex = 16^2
-            'GRID_MID': 4096,       # 3位hex = 16^3
-            'GRID_MINOR': 4096,     # 3位hex = 16^3
-            'GRID_MICRO': 4096,     # 3位hex = 16^3
-            'total_estimate': '< 13K'
-        },
-        'relative': {
-            'description': '词表大小取决于数据中的实际变化模式，通常很小',
-            'total_estimate': '< 1K'
+def estimate_vocab_size(method='cell_based'):
+    """估算H3令牌化方案的词表大小"""
+    if method == 'cell_based':
+        return {
+            'H3_res_*': 16,         # 分辨率0-15
+            'H3_base_*': 122,       # H3有122个基础单元格
+            'H3_cell_*_*': 7 * 15,  # 每个分辨率级别最多7个方向，最多15级
+            'H3_INVALID_*': 'variable',
+            'total_estimate': '< 300 tokens'
         }
-    }
-    return estimates.get(method, '未知')
+    return '未知'
+
+
 
 # ====================================================================
 # 2. 核心处理函数，将单个CSV文件中的每个轨迹点转换为令牌序列
 # ====================================================================
-def process_track_file_to_segments(csv_path, segment_size=30, h3_method='hierarchical_optimized'):
+def process_track_file_to_segments(csv_path, segment_size=30, h3_method='cell_based'):
     """读取单个CSV文件，将轨迹按指定大小分段，返回分段token序列和标签列表"""
     df = pd.read_csv(csv_path)
     df['date'] = pd.to_datetime(df['date'])
@@ -290,7 +162,6 @@ def process_track_file_to_segments(csv_path, segment_size=30, h3_method='hierarc
             continue
             
         segment_tokens = []
-        prev_h3 = None  # 用于相对位置编码
         
         for _, row in segment_df.iterrows():
             # 为每个轨迹点生成令牌序列
@@ -300,12 +171,8 @@ def process_track_file_to_segments(csv_path, segment_size=30, h3_method='hierarc
             time_tokens = time_to_tokens(row['date'])
             point_tokens.extend(time_tokens)
             
-            # 2. H3位置令牌（使用选定的方案）
-            if h3_method == 'relative':
-                h3_tokens = h3_tokenizer(row['H3'], prev_h3)
-                prev_h3 = row['H3']  # 更新前一个H3值
-            else:
-                h3_tokens = h3_tokenizer(row['H3'])
+            # 2. H3位置令牌
+            h3_tokens = h3_tokenizer(row['H3'])
             point_tokens.extend(h3_tokens)
             
             # 3. 速度令牌
@@ -335,20 +202,13 @@ def process_track_file_to_segments(csv_path, segment_size=30, h3_method='hierarc
 # ====================================================================
 # 3. 主程序：遍历数据文件夹，生成JSONL格式的数据集
 # ====================================================================
-def create_dataset(input_folder, output_file, segment_size=30, h3_method='hierarchical_optimized'):
+def create_dataset(input_folder, output_file, segment_size=30, h3_method='cell_based'):
     """
     处理文件夹中的所有CSV文件，将它们按分段处理并保存为JSONL格式。
     每个分段包含指定数量的轨迹点和对应的类别标签。
     
     参数:
-    - h3_method: H3令牌化方案，可选值：
-      * 'char_split': 每个字符单独作为token (最小词表：240个token)
-      * 'hierarchical_optimized' (推荐): 优化的层级方案，去掉H3_FULL
-      * 'semantic': 基于H3语义结构的拆分
-      * 'grid_based': 基于网格概念的表示  
-      * 'relative': 相对位置编码
-      * 'grouped': 分组方案
-      * 'simple': 简单方案
+    - h3_method: H3令牌化方案，当前使用基于单元格的方案 'cell_based'
     """
     print(f"开始处理文件夹: {input_folder}")
     print(f"分段大小: {segment_size}个点")
@@ -387,13 +247,13 @@ def create_dataset(input_folder, output_file, segment_size=30, h3_method='hierar
 
 if __name__ == "__main__":
     # 定义你的原始数据文件夹路径
-    source_data_folder = 'data/nj_train'
+    source_data_folder = 'data/data_demo'
     
     # 定义输出的数据集文件名
-    output_dataset_file = 'train_dataset_nj.jsonl'
+    output_dataset_file = 'train_dataset_demo.jsonl'
     
-    # 选择H3令牌化方法（推荐使用'hierarchical_optimized'或'grid_based'）
-    h3_method = 'char_split'  # 可根据需要修改
+    # 使用基于单元格的H3令牌化方法
+    h3_method = 'cell_based'
     
     # 执行数据集创建
     create_dataset(source_data_folder, output_dataset_file, segment_size=30, h3_method=h3_method)
